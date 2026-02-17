@@ -1,5 +1,53 @@
-rda <- function(X_vars, Y_vars, data=NULL, Cov, numObs, extraTries=50, ...) {
+#' Redundancy analysis
+#'
+#' This function conducts redundancy analysis using the OpenMx package.
+#' Missing data are handled with the full information maximum likelihood
+#' method when raw data are available. It provides standard errors for
+#' the standardized estimates.
+#'
+#' @param X_vars A vector of characters of the X variables.
+#' @param Y_vars A vector of characters of the Y variables.
+#' @param data A data frame containing raw data. If NULL, `Cov` and
+#'   `numObs` must be provided.
+#' @param Cov A covariance or correlation matrix. Required when `data` is NULL.
+#' @param numObs A sample size. Required when `data` is NULL.
+#' @param extraTries This function calls [OpenMx::mxTryHard()] to obtain
+#'   parameter estimates and their standard errors. `extraTries` is the
+#'   number of extra runs. If `extraTries=0`, [OpenMx::mxRun()] is
+#'   called.
+#' @param ... Additional arguments passed to either
+#'   [OpenMx::mxTryHard()] or [OpenMx::mxRun()].
+#'
+#' @return A list with class `RDA`. It stores the model in OpenMx
+#'   objects. The fitted object is stored in `mx.fit`.
+#'
+#' @author Mike W.-L. Cheung <mikewlcheung@nus.edu.sg>
+#'
+#' @references
+#'   Gu, F., Yung, Y.-F., Cheung, M. W.-L., Joo, B.-K., & Nimon, K.
+#'   (2023). Statistical inference in redundancy analysis: A direct
+#'   covariance structure modeling
+#'   approach. *Multivariate Behavioral Research*, **58(5)**, 877-893. \doi{10.1080/00273171.2022.2141675}
+#'
+#' @seealso [Chittum19], [sas_ex2]
+#'
+#' @export
+#'
+#' @examples
+#' \donttest{
+#' ## Redundancy Analysis
+#' rda(X_vars=c("x1", "x2", "x3", "x4"),
+#'     Y_vars=c("y1", "y2", "y3"),
+#'     data=sas_ex2)
+#' }
+rda <- function(X_vars, Y_vars, data=NULL, Cov=NULL, numObs=NULL, extraTries=50, ...) {
  
+    ## Input validation
+    if (is.null(data)) {
+        if (is.null(Cov)) stop("Either 'data' or 'Cov' must be provided.\n")
+        if (is.null(numObs)) stop("'numObs' must be provided when using 'Cov'.\n")
+    }
+    
     ## Sample Cov as starting values if raw data are given
     if (!is.null(data)) {
         Cov <- cov(data, use="pairwise.complete.obs")
@@ -13,9 +61,11 @@ rda <- function(X_vars, Y_vars, data=NULL, Cov, numObs, extraTries=50, ...) {
 
     ## Get the R matrices from the data
     R <- cov2cor(Cov)
-    Rxx <- R[X_vars, X_vars]
-    Ryy <- R[Y_vars, Y_vars]
-    Rxy <- R[Y_vars, X_vars]
+    ## Keep matrix shape for single-variable Y (q==1); vector dropping
+    ## causes non-conformable matrix multiplications below.
+    Rxx <- R[X_vars, X_vars, drop=FALSE]
+    Ryy <- R[Y_vars, Y_vars, drop=FALSE]
+    Rxy <- R[Y_vars, X_vars, drop=FALSE]
 
     tri_prod  <- solve(Rxx) %*% t(Rxy) %*% Rxy
     ei <- eigen(tri_prod)
@@ -52,7 +102,7 @@ rda <- function(X_vars, Y_vars, data=NULL, Cov, numObs, extraTries=50, ...) {
   
     ## Standard deviations of X and Y
     SD <- mxMatrix("Diag", nrow=(p+q), ncol=(p+q), free=TRUE, 
-                   values=sqrt(diag(Cov[c(X_vars, Y_vars), c(X_vars, Y_vars)])), 
+                   values=sqrt(diag(Cov[c(X_vars, Y_vars), c(X_vars, Y_vars), drop=FALSE])), 
                    labels=c(paste0("sdx", 1:p), paste0("sdy", 1:q)),
                    name="SD")
   
@@ -74,8 +124,9 @@ rda <- function(X_vars, Y_vars, data=NULL, Cov, numObs, extraTries=50, ...) {
                            cbind(qZerop, Iq)), name="W_I")
 
     ## Ryy
+    ## Keep 1x1 matrix form when q==1 so cov2cor()/vechs() remain valid.
     Ryy <- mxMatrix("Stand", nrow=q, ncol=q, free=TRUE,
-                    values=vechs(cov2cor(Cov[Y_vars, Y_vars])),
+                    values=vechs(cov2cor(Cov[Y_vars, Y_vars, drop=FALSE])),
                     labels=vechs(outer(1:q, 1:q, function(x, y) paste0("Ry", x, "_", y))),
                     name="Ryy")
 
@@ -137,7 +188,7 @@ rda <- function(X_vars, Y_vars, data=NULL, Cov, numObs, extraTries=50, ...) {
 
     if (is.null(data)) {
         ## Cov or Cor as inputs
-        mxdata <- mxData(observed=Cov[c(X_vars, Y_vars), c(X_vars, Y_vars)], 
+        mxdata <- mxData(observed=Cov[c(X_vars, Y_vars), c(X_vars, Y_vars), drop=FALSE], 
                          type="cov", numObs=numObs)
     
         ## Expected covariance, which is required with raw data, in the fit function
@@ -238,13 +289,27 @@ rda <- function(X_vars, Y_vars, data=NULL, Cov, numObs, extraTries=50, ...) {
     out
 }
 
+#' Print Method for RDA Objects
+#'
+#' Print method for `RDA` objects.
+#'
+#' @param x An object returned from the class of `RDA`.
+#' @param digits Number of digits in printing the matrices. The default is 4.
+#' @param ... Unused.
+#'
+#' @return No return value, called for side effects
+#'
+#' @author Mike W.-L. Cheung <mikewlcheung@nus.edu.sg>
+#'
+#' @method print RDA
+#' @export
 print.RDA <- function(x, digits=4, ...) {
     if (!is.element("RDA", class(x)))
-        stop("\"x\" must be an object of class \"RA\".")
+        stop("\"x\" must be an object of class \"RDA\".")
 
     cat("Please check the constraints before interpreting the results.\n")
-    cat("Constraint 1. The followings should be close to 1:", round(x$Constraint1, 6), ".\n")
-    cat("Constraint 2. The followings (min and max) should be close to 0:", round(x$Constraint2, 6), ".\n")
+    cat("Constraint 1. The following values should be close to 1:", round(x$Constraint1, 6), ".\n")
+    cat("Constraint 2. The following values (min and max) should be close to 0:", round(x$Constraint2, 6), ".\n")
   
     cat("\nW matrix:\n")
     .mprint(x$W_est, digits=digits)

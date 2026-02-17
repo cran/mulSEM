@@ -1,6 +1,13 @@
 [![R build status](https://github.com/mikewlcheung/mulsem/workflows/R-CMD-check/badge.svg)](https://github.com/mikewlcheung/mulsem/actions)
+[![cran version](http://www.r-pkg.org/badges/version/mulSEM)](https://cran.r-project.org/package=mulSEM)
+[![Monthly Downloads](http://cranlogs.r-pkg.org/badges/mulSEM)](https://cranlogs.r-pkg.org/badges/mulSEM)
+[![Total Downloads](http://cranlogs.r-pkg.org/badges/grand-total/mulSEM)](https://cranlogs.r-pkg.org/badges/grand-total/mulSEM)
+[![Rdoc](http://www.rdocumentation.org/badges/version/mulSEM)](https://www.rdocumentation.org/packages/mulSEM)
 
-The `mulSEM` package includes some multivariate analyses utilizing a structural equation modeling (SEM) approach through the 'OpenMx' package. These analyses include canonical correlation analysis (CANCORR), redundancy analysis (RDA), and multivariate principal component regression (MPCR).
+The `mulSEM` package provides multivariate analyses using a structural
+equation modeling (SEM) approach through the `OpenMx` package. These
+analyses include canonical correlation analysis (CANCORR), redundancy
+analysis (RDA), and multivariate principal component regression (MPCR).
 
 You may install it from CRAN by:
 
@@ -8,7 +15,7 @@ You may install it from CRAN by:
 install.packages("mulSEM")
 ```
 
-The developmental version can be installed from GitHub by:
+The development version can be installed from GitHub:
 ```
 ## Install remotes package if it has not been installed yet
 # install.packages("remotes")
@@ -33,4 +40,3 @@ mpcr(X_vars=c("AU", "CC", "CL", "CO", "DF", "FB", "GR", "MW"),
      pca="COR", pc_select=1,
      data=Nimon21)
 ```
-

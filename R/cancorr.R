@@ -1,6 +1,63 @@
-cancorr <- function(X_vars, Y_vars, data=NULL, Cov, numObs,
+#' Canonical correlation analysis
+#'
+#' This function conducts canonical correlation analysis using the OpenMx
+#' package. Missing data are handled with the full information maximum
+#' likelihood method when raw data are available. It provides standard
+#' errors for the estimates.
+#'
+#' @param X_vars A vector of characters of the X variables.
+#' @param Y_vars A vector of characters of the Y variables.
+#' @param data A data frame containing raw data. If NULL, `Cov` and
+#'   `numObs` must be provided.
+#' @param Cov A covariance or correlation matrix. Required when `data` is NULL.
+#' @param numObs A sample size. Required when `data` is NULL.
+#' @param model Four models defined in Gu, Yung, and Cheung (2019).
+#'   `CORR` and `COV` refer to analyses of correlation structures and
+#'   covariance structures, respectively.
+#' @param extraTries This function calls [OpenMx::mxTryHard()] to obtain
+#'   parameter estimates and their standard errors. `extraTries` is the
+#'   number of extra runs. If `extraTries=0`, [OpenMx::mxRun()] is
+#'   called.
+#' @param ... Additional arguments passed to either
+#'   [OpenMx::mxTryHard()] or [OpenMx::mxRun()].
+#'
+#' @return A list with class `CanCorr`. It stores the model in OpenMx
+#'   objects. The fitted object is stored in `mx.fit`.
+#'
+#' @note `cancorr` expects the number of variables in `Y_vars` to be
+#'   equal to or greater than that in `X_vars`. If there are fewer in
+#'   `Y_vars`, you may swap between `X_vars` and `Y_vars`.
+#'
+#' @author Mike W.-L. Cheung <mikewlcheung@nus.edu.sg>
+#'
+#' @references
+#'   Gu, F., Yung, Y.-F., & Cheung, M. W.-L. (2019). Four covariance
+#'   structure models for canonical correlation analysis: A COSAN modeling
+#'   approach. *Multivariate Behavioral Research*, **54(2)**,
+#'   192-223. \doi{10.1080/00273171.2018.1512847}
+#'
+#' @seealso [Thorndike00], [sas_ex1]
+#'
+#' @export
+#' @import OpenMx
+#' @importFrom stats cov2cor var cov cor sd rnorm
+#'
+#' @examples
+#' \donttest{
+#' ## Canonical Correlation Analysis
+#' cancorr(X_vars=c("Weight", "Waist", "Pulse"),
+#'         Y_vars=c("Chins", "Situps", "Jumps"),
+#'         data=sas_ex1)
+#' }
+cancorr <- function(X_vars, Y_vars, data=NULL, Cov=NULL, numObs=NULL,
                     model=c("CORR-W", "CORR-L", "COV-W", "COV-L"),
                     extraTries=50, ...) {
+
+    ## Input validation
+    if (is.null(data)) {
+        if (is.null(Cov)) stop("Either 'data' or 'Cov' must be provided.\n")
+        if (is.null(numObs)) stop("'numObs' must be provided when using 'Cov'.\n")
+    }
 
     model <- match.arg(model)
     switch(model,
@@ -47,9 +104,11 @@ cancorr <- function(X_vars, Y_vars, data=NULL, Cov, numObs,
     }
         
     ## Calculate the starting values
-    Rxx <- R[X_vars, X_vars]
-    Ryy <- R[Y_vars, Y_vars]
-    Rxy <- R[X_vars, Y_vars]
+    ## Keep matrix shape for single-variable sets (p==1 or q==1);
+    ## default dropping to vectors breaks downstream matrix algebra.
+    Rxx <- R[X_vars, X_vars, drop=FALSE]
+    Ryy <- R[Y_vars, Y_vars, drop=FALSE]
+    Rxy <- R[X_vars, Y_vars, drop=FALSE]
 
     ## ei <- fda::geigen(Rxy, Rxx, Ryy)
     ## names(ei) <- c("cor", "xcoef", "ycoef")
@@ -136,19 +195,25 @@ cancorr <- function(X_vars, Y_vars, data=NULL, Cov, numObs,
     Lambda <- mxMatrix("Diag", nrow=p, ncol=p, free=TRUE, labels=paste0("l", 1:p),
                        values=SVD$d, lbound=1e-10, name="Lambda")
 
-    ## Create a repeated contrast
-    cont  <- cbind(diag(p-1), matrix(0, ncol=1, nrow=(p-1))) +
-             cbind(matrix(0, ncol=1, nrow=(p-1)), (-1)*diag(p-1))
-    Cont <- mxMatrix("Full", nrow=p-1, ncol=p, free=FALSE,
-                     values=cont, name="Cont")
+    ## Lambda-ordering constraint needs at least two lambdas.
+    ## For p==1, the contrast has zero rows and produces a no-op warning.
+    if (p > 1) {
+        ## Create a repeated contrast
+        cont  <- cbind(diag(p-1), matrix(0, ncol=1, nrow=(p-1))) +
+                 cbind(matrix(0, ncol=1, nrow=(p-1)), (-1)*diag(p-1))
+        Cont <- mxMatrix("Full", nrow=p-1, ncol=p, free=FALSE,
+                         values=cont, name="Cont")
 
-    ## (p-1)x1 zeros
-    p_1_0_1  <- mxMatrix("Zero", nrow=p-1, ncol=1, name="p_1_0_1")
+        ## (p-1)x1 zeros
+        p_1_0_1  <- mxMatrix("Zero", nrow=p-1, ncol=1, name="p_1_0_1")
 
-    ## Make sure that lambdas are in descending order
-    Constraint_lambda <- mxConstraint(Cont %*% diag2vec(Lambda) > p_1_0_1,
-                                      name="Constraint_lambda")
-    mx.model <- mxModel(mx.model, Lambda, Cont, p_1_0_1, Constraint_lambda)
+        ## Make sure that lambdas are in descending order
+        Constraint_lambda <- mxConstraint(Cont %*% diag2vec(Lambda) > p_1_0_1,
+                                          name="Constraint_lambda")
+        mx.model <- mxModel(mx.model, Lambda, Cont, p_1_0_1, Constraint_lambda)
+    } else {
+        mx.model <- mxModel(mx.model, Lambda)
+    }
     
     if (d==0) {
         P <- mxAlgebra(rbind(cbind(Ip, Lambda),
@@ -264,6 +329,20 @@ cancorr <- function(X_vars, Y_vars, data=NULL, Cov, numObs,
     out
 }
 
+#' Print Method for CanCorr Objects
+#'
+#' Print method for `CanCorr` objects.
+#'
+#' @param x An object returned from the class of `CanCorr`.
+#' @param digits Number of digits in printing the matrices. The default is 4.
+#' @param ... Unused.
+#'
+#' @return No return value, called for side effects
+#'
+#' @author Mike W.-L. Cheung <mikewlcheung@nus.edu.sg>
+#'
+#' @method print CanCorr
+#' @export
 print.CanCorr <- function(x, digits=4, ...) {
     if (!is.element("CanCorr", class(x)))
         stop("\"x\" must be an object of class \"CanCorr\".")
@@ -272,7 +351,7 @@ print.CanCorr <- function(x, digits=4, ...) {
     
     if (x$model %in% c("CORR-W", "CORR-L")) {
         cat("Please check the constraint before interpreting the results.\n")
-        cat("Constraint. The followings should be close to 1: ", round(x$Constraint, 6), ".\n")
+        cat("Constraint. The following values should be close to 1: ", round(x$Constraint, 6), ".\n")
     }
       
     cat("\nA1 matrix (X_vars):\n")
@@ -280,7 +359,7 @@ print.CanCorr <- function(x, digits=4, ...) {
     cat("\nA1 matrix (SE):\n")
     .mprint(x$A1_SE, digits=digits)
   
-    cat("\nA2 matrix (Y_vas):\n")
+    cat("\nA2 matrix (Y_vars):\n")
     .mprint(x$A2_est, digits=digits)
     cat("\nA2 matrix (SE):\n")
     .mprint(x$A2_SE, digits=digits)

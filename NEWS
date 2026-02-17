@@ -1,3 +1,11 @@
+Release 1.2 (Jan 16, 2026)
+====================================
+* Fix a few bugs.
+
+Release 1.1 (Nov 7, 2025)
+====================================
+* Use roxygen2 for documentation and improve documentation.
+
 Release 1.0 (Feb 3, 2024)
 ====================================
 * Add redundancy analysis, canonical correlation analysis, and multivariate principal component regression.
